@@ -17,10 +17,11 @@
 from functools import lru_cache
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 
 from pydantic import AnyHttpUrl, BaseModel, SecretStr, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from sqlalchemy.engine.url import URL
+from sqlalchemy.engine.url import URL, make_url
 
 PROJECT_DIR = Path(__file__).parent.parent.parent
 
@@ -43,11 +44,16 @@ class Database(BaseModel):
     port: int = 5432
     db: str = "postgres"
 
+    model_config = {
+        "arbitrary_types_allowed": True
+    }
+
     @computed_field
     @property
     def sqlalchemy_url(self) -> URL:
         if self.url:
-            return URL.create(self.url)
+            # Convert the URL string to SQLAlchemy URL object
+            return make_url(self.url.replace('postgresql://', 'postgresql+asyncpg://'))
         return URL.create(
             drivername="postgresql+asyncpg",
             username=self.username,
@@ -71,9 +77,10 @@ class Settings(BaseSettings):
         env_file=f"{PROJECT_DIR}/.env",
         case_sensitive=False,
         env_nested_delimiter="__",
+        arbitrary_types_allowed=True
     )
 
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    return Settings()  # type: ignore
+    return Settings()
