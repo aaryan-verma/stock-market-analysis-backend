@@ -38,11 +38,11 @@ class Security(BaseModel):
 
 class Database(BaseModel):
     url: Optional[str] = None
-    hostname: str = "postgres"
-    username: str = "postgres"
-    password: SecretStr
-    port: int = 5432
-    db: str = "postgres"
+    hostname: Optional[str] = None
+    username: Optional[str] = None
+    password: Optional[SecretStr] = None
+    port: Optional[int] = None
+    db: Optional[str] = None
 
     model_config = {
         "arbitrary_types_allowed": True
@@ -53,15 +53,17 @@ class Database(BaseModel):
     def sqlalchemy_url(self) -> URL:
         if self.url:
             # Convert the URL string to SQLAlchemy URL object
-            return make_url(self.url.replace('postgresql://', 'postgresql+asyncpg://'))
-        return URL.create(
-            drivername="postgresql+asyncpg",
-            username=self.username,
-            password=self.password.get_secret_value(),
-            host=self.hostname,
-            port=self.port,
-            database=self.db,
-        )
+            return make_url(self.url)
+        elif all([self.hostname, self.username, self.password, self.port, self.db]):
+            return URL.create(
+                drivername="postgresql+asyncpg",
+                username=self.username,
+                password=self.password.get_secret_value(),
+                host=self.hostname,
+                port=self.port,
+                database=self.db,
+            )
+        raise ValueError("Either DATABASE__URL or all individual database settings must be provided")
 
 
 class Settings(BaseSettings):

@@ -3,19 +3,19 @@ services:
     name: sma-backend
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: ./start.sh
+    startCommand: chmod +x start.sh && ./start.sh
     envVars:
       - key: PORT
-        value: "8000"
+        value: "10000"
       - key: PYTHON_VERSION
         value: "3.13.1"
       # Database configuration
       - key: DATABASE__URL
-        sync: false  # Set this in Render dashboard
+        sync: false  # Set this in Render dashboard using Internal Database URL
       # Security configuration
       - key: SECURITY__JWT_SECRET_KEY
         sync: false
       - key: SECURITY__BACKEND_CORS_ORIGINS
         value: '["https://sma-backend.onrender.com", "https://*.onrender.com"]'
       - key: SECURITY__ALLOWED_HOSTS
-        value: '["sma-backend.onrender.com", "*.onrender.com", "localhost", "0.0.0.0", "127.0.0.1"]' 
+        value: '["sma-backend.onrender.com", "*.onrender.com", "0.0.0.0"]' 

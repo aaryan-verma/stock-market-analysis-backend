@@ -4,15 +4,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 import psutil
 import logging
+import os
+from starlette.config import Config
 
 from app.api.api_router import api_router, auth_router
 from app.core.config import get_settings
 from app.api.endpoints import chat, visualization, news  # Add news import
 
+config = Config(".env")
+
 app = FastAPI(
-    title="minimal fastapi postgres template",
-    version="6.1.0",
-    description="https://github.com/rafsaf/minimal-fastapi-postgres-template",
+    title="Stock Market Analysis API",
+    version="1.0.0",
+    description="Stock Market Analysis Backend API",
     openapi_url="/openapi.json",
     docs_url="/",
 )
@@ -22,12 +26,10 @@ app.include_router(api_router)
 app.include_router(news.router, prefix="/news", tags=["news"])
 
 # Sets all CORS enabled origins
+settings = get_settings()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        str(origin).rstrip("/")
-        for origin in get_settings().security.backend_cors_origins
-    ] + ["https://your-vercel-app.vercel.app"],
+    allow_origins=[str(origin) for origin in settings.security.backend_cors_origins],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -36,7 +38,7 @@ app.add_middleware(
 # Guards against HTTP Host Header attacks
 app.add_middleware(
     TrustedHostMiddleware,
-    allowed_hosts=get_settings().security.allowed_hosts,
+    allowed_hosts=settings.security.allowed_hosts,
 )
 
 # Add CORS middleware
@@ -64,3 +66,8 @@ async def monitor_memory(request: Request, call_next):
         logger.warning(f"High memory usage: {mem_used:.2f}MB for {request.url.path}")
     
     return response
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.getenv("PORT", "10000"))  # Changed default to 10000
+    uvicorn.run("app.main:app", host="0.0.0.0", port=port, workers=4)
