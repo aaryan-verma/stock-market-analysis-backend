@@ -11,7 +11,7 @@ services:
         value: "3.13.1"
       # Database configuration
       - key: DATABASE__URL
-        sync: false  # Set this in Render dashboard using Internal Database URL
+        sync: false
       # Security configuration
       - key: SECURITY__JWT_SECRET_KEY
         sync: false

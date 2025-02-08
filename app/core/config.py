@@ -69,6 +69,7 @@ class Database(BaseModel):
 class Settings(BaseSettings):
     security: Security
     database: Database
+    port: Optional[int] = None
 
     @computed_field
     @property
@@ -79,7 +80,8 @@ class Settings(BaseSettings):
         env_file=f"{PROJECT_DIR}/.env",
         case_sensitive=False,
         env_nested_delimiter="__",
-        arbitrary_types_allowed=True
+        arbitrary_types_allowed=True,
+        extra='ignore'
     )
 
 
