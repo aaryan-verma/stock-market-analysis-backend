@@ -16,6 +16,7 @@
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Optional
 
 from pydantic import AnyHttpUrl, BaseModel, SecretStr, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -35,28 +36,36 @@ class Security(BaseModel):
 
 
 class Database(BaseModel):
+    url: Optional[str] = None
     hostname: str = "postgres"
     username: str = "postgres"
     password: SecretStr
     port: int = 5432
     db: str = "postgres"
 
+    @computed_field
+    @property
+    def sqlalchemy_url(self) -> URL:
+        if self.url:
+            return URL.create(self.url)
+        return URL.create(
+            drivername="postgresql+asyncpg",
+            username=self.username,
+            password=self.password.get_secret_value(),
+            host=self.hostname,
+            port=self.port,
+            database=self.db,
+        )
+
 
 class Settings(BaseSettings):
     security: Security
     database: Database
 
-    @computed_field  # type: ignore[prop-decorator]
+    @computed_field
     @property
     def sqlalchemy_database_uri(self) -> URL:
-        return URL.create(
-            drivername="postgresql+asyncpg",
-            username=self.database.username,
-            password=self.database.password.get_secret_value(),
-            host=self.database.hostname,
-            port=self.database.port,
-            database=self.database.db,
-        )
+        return self.database.sqlalchemy_url
 
     model_config = SettingsConfigDict(
         env_file=f"{PROJECT_DIR}/.env",

@@ -3,23 +3,15 @@ services:
     name: sma-backend
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    startCommand: ./start.sh
     envVars:
       - key: PORT
         value: "8000"
       - key: PYTHON_VERSION
         value: "3.13.1"
-      # Database configuration - these should be set in Render's dashboard
-      - key: DATABASE__HOSTNAME
-        sync: false
-      - key: DATABASE__USERNAME
-        sync: false
-      - key: DATABASE__PASSWORD
-        sync: false
-      - key: DATABASE__PORT
-        sync: false
-      - key: DATABASE__DB
-        sync: false
+      # Database configuration
+      - key: DATABASE__URL
+        sync: false  # Set this in Render dashboard
       # Security configuration
       - key: SECURITY__JWT_SECRET_KEY
         sync: false
