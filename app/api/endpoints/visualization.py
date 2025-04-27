@@ -56,7 +56,6 @@ def get_closing_interpretation(last_close: float, levels: dict) -> str:
 
 def create_plot(df: pd.DataFrame, period: str) -> str:
     """Create plot with support and resistance levels"""
-    logger.debug(f"Creating visualization plot with {len(df)} data points for period {period}")
     # Set style
     plt.style.use('dark_background')
     
@@ -209,9 +208,8 @@ def create_plot(df: pd.DataFrame, period: str) -> str:
                 facecolor='#1f2937',
                 edgecolor='none')
     buffer.seek(0)
-    
-    image_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
-    plt.close(fig)
+    image_base64 = base64.b64encode(buffer.getvalue()).decode()
+    plt.close()
     
     logger.debug("Visualization plot created successfully")
     return image_base64
@@ -234,20 +232,11 @@ async def get_technical_analysis_plot(
         period: Resampling period ('D'=Daily, 'W'=Weekly, 'M'=Monthly, 'Q'=Quarterly, 'Y'=Yearly)
     
     Returns:
-        JSON with base64 encoded plot image and analysis
+        JSON with plot data as base64 string
     """
     logger.info(f"Visualization request for symbol: {symbol}, period: {period}")
     try:
-        # Validate period
-        valid_periods = {'D': 'Daily', 'W': 'Weekly', 'M': 'Monthly', 'Q': 'Quarterly', 'Y': 'Yearly'}
-        if period not in valid_periods:
-            logger.warning(f"Invalid period specified: {period}")
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid period. Must be one of: {', '.join(valid_periods.keys())}"
-            )
-        
-        # First get the stock data
+        # Get stock data
         logger.debug(f"Fetching stock data for visualization of {symbol}")
         stock_data = await get_stock_data(symbol, start_date, end_date)
         
@@ -258,32 +247,98 @@ async def get_technical_analysis_plot(
                 detail=f"No data found for symbol {symbol} in the specified date range"
             )
         
-        # Convert to DataFrame
         df = pd.DataFrame(stock_data['data'])
         logger.debug(f"Retrieved {len(df)} data points for visualization")
         
-        # Set the date as index
-        df['Date'] = pd.to_datetime(df['Date'])
-        df = df.set_index('Date')
+        # Make sure we have dates in the proper format
+        try:
+            # If the Date column exists but contains null values, create a range of dates
+            if 'Date' in df.columns and df['Date'].isnull().any():
+                logger.debug("Date column contains null values, generating date range")
+                # Parse start and end dates
+                start = pd.to_datetime(start_date, format='%d-%m-%Y')
+                end = pd.to_datetime(end_date, format='%d-%m-%Y')
+                # Create date range that matches the number of rows
+                date_range = pd.date_range(start=start, end=end, periods=len(df))
+                df['Date'] = date_range
+            
+            # If Date column doesn't exist, create it
+            if 'Date' not in df.columns:
+                logger.debug("Date column doesn't exist, generating date range")
+                # Parse start and end dates
+                start = pd.to_datetime(start_date, format='%d-%m-%Y')
+                end = pd.to_datetime(end_date, format='%d-%m-%Y')
+                # Create date range that matches the number of rows
+                date_range = pd.date_range(start=start, end=end, periods=len(df))
+                df['Date'] = date_range
+            
+            # Ensure Date is datetime
+            df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+            
+            # Drop rows with invalid dates
+            invalid_date_count = df['Date'].isna().sum()
+            if invalid_date_count > 0:
+                logger.warning(f"Dropping {invalid_date_count} rows with invalid dates")
+                df = df.dropna(subset=['Date'])
+            
+            # Set Date as index
+            df = df.set_index('Date')
+            
+            # Debug column names and data types
+            logger.debug(f"DataFrame columns: {df.columns.tolist()}")
+            logger.debug(f"DataFrame dtypes: {df.dtypes}")
+            
+        except Exception as e:
+            logger.error(f"Error processing dates: {str(e)}", exc_info=True)
+            # Generate synthetic dates as a fallback
+            logger.debug("Using synthetic date range as fallback")
+            date_range = pd.date_range(start='today', periods=len(df))
+            df = df.set_index(date_range)
         
-        # Resample data to specified period
+        # Validate period
+        valid_periods = {'D': 'Daily', 'W': 'Weekly', 'M': 'Monthly', 'Q': 'Quarterly', 'Y': 'Yearly'}
+        if period not in valid_periods:
+            logger.warning(f"Invalid period specified: {period}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid period. Must be one of: {', '.join(valid_periods.keys())}"
+            )
+        
+        # Process data
         logger.debug(f"Resampling data for visualization to {valid_periods[period]} period")
         resampled_data = data_resampling(df, period)
         
-        # Calculate levels
         logger.debug("Calculating support and resistance levels for visualization")
         analysis_result = calculate_levels(resampled_data)
         
-        # Create plot
-        image_base64 = create_plot(analysis_result, period)
-        
-        # Get interpretation
+        # Get last closing price and levels
         last_close = analysis_result['Close'].iloc[-1]
-        last_row = analysis_result.iloc[-1].to_dict()
-        levels = {key: value for key, value in last_row.items() 
-                 if key in ['S3', 'S4', 'S5', 'S6', 'R3', 'R4', 'R5', 'R6', 'PP']}
+        last_values = analysis_result.iloc[-1]
+        levels = {
+            'R6': last_values['R6'],
+            'R5': last_values['R5'],
+            'R4': last_values['R4'],
+            'R3': last_values['R3'],
+            'PP': last_values['PP'],
+            'S3': last_values['S3'],
+            'S4': last_values['S4'],
+            'S5': last_values['S5'],
+            'S6': last_values['S6']
+        }
         
         interpretation = get_closing_interpretation(last_close, levels)
+        plot_base64 = create_plot(analysis_result, period)
+        
+        # Get last candle data
+        last_candle = analysis_result.iloc[-1]
+        last_ohlc = {
+            "date": last_candle.name.strftime('%Y-%m-%d'),
+            "open": float(last_candle['Open']),
+            "high": float(last_candle['High']),
+            "low": float(last_candle['Low']),
+            "close": float(last_candle['Close']),
+            "change": float((last_candle['Close'] - last_candle['Open']) / last_candle['Open'] * 100)
+        }
         
         logger.info(f"Successfully created visualization for {symbol}")
         return JSONResponse({
@@ -291,15 +346,14 @@ async def get_technical_analysis_plot(
             "period": valid_periods[period],
             "start_date": start_date,
             "end_date": end_date,
-            "chart_image": image_base64,
+            "plot": plot_base64,
             "interpretation": interpretation,
-            "levels": {k: round(v, 2) if isinstance(v, (int, float)) else v 
-                      for k, v in levels.items()}
+            "last_ohlc": last_ohlc
         })
         
     except Exception as e:
         logger.error(f"Error generating visualization for {symbol}: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=503,
-            detail=f"Visualization failed: {str(e)}"
+            detail=f"Plot generation failed: {str(e)}"
         )

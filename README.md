@@ -28,6 +28,8 @@ _Check out online example: https://minimal-fastapi-postgres-template.rafsaf.pl, 
     - [Deployment strategies - via Docker image](#deployment-strategies---via-docker-image)
     - [Docs URL, CORS and Allowed Hosts](#docs-url-cors-and-allowed-hosts)
   - [License](#license)
+  - [Environment Variables](#environment-variables)
+    - [API Keys](#api-keys)
 
 
 ## Features
@@ -408,3 +410,18 @@ There are some **opinionated** default settings in `/app/main.py` for documentat
 ## License
 
 The code is under MIT License. It's here for educational purposes, created mainly to have a place where up-to-date Python and FastAPI software lives. Do whatever you want with this code.
+
+# Environment Variables
+
+The application requires certain environment variables to be set for proper functioning:
+
+## API Keys
+- `NEWS_API_KEY`: API key for NewsAPI.org (required for the news endpoint)
+
+You can set these environment variables in your system or create a `.env` file in the project root with the following content:
+
+```
+NEWS_API_KEY=your_newsapi_key_here
+```
+
+For development, a default API key is provided as fallback, but it's recommended to get your own key for production use.

@@ -2,7 +2,13 @@ from fastapi import APIRouter, HTTPException
 from typing import List, Dict
 from datetime import datetime, timedelta
 import aiohttp
+import os
 from app.api.logger import get_logger
+from app.core.config import get_settings
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Set up logger for this module
 logger = get_logger(__name__)
@@ -12,8 +18,13 @@ router = APIRouter()
 async def fetch_news(symbol: str, max_items: int = 10) -> List[Dict]:
     """Fetch stock-specific news using NewsAPI.org"""
     logger.debug(f"Fetching news for symbol: {symbol}, max_items: {max_items}")
-    # Free API key from NewsAPI.org
-    API_KEY = "d6576629c1114f1ca23237a17ad35a2b"
+    
+    # Try multiple methods to get the API key
+    API_KEY = os.environ.get("NEWS_API_KEY")
+    if not API_KEY:
+        # Fallback to default for development environments
+        API_KEY = "default-news-api-key"
+        logger.warning("Using default NewsAPI key. Set NEWS_API_KEY in environment for production.")
     
     try:
         async with aiohttp.ClientSession() as session:

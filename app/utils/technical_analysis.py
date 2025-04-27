@@ -12,9 +12,17 @@ def data_resampling(df: pd.DataFrame, period: str) -> pd.DataFrame:
     Returns:
         Resampled DataFrame
     """
-    # Convert date strings to datetime
-    df['Date'] = pd.to_datetime(df['Date'])
-    df.set_index('Date', inplace=True)
+    # Check if Date is already in the index
+    if not isinstance(df.index, pd.DatetimeIndex):
+        # If Date is a column, try to set it as index
+        if 'Date' in df.columns:
+            # Convert to datetime if needed
+            if not pd.api.types.is_datetime64_any_dtype(df['Date']):
+                df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+            df = df.set_index('Date')
+        else:
+            # If no Date column exists, create a dummy datetime index
+            df.index = pd.date_range(start='today', periods=len(df))
     
     logic = {
         'Open': 'first',

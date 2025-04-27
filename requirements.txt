@@ -54,6 +54,7 @@ mypy==1.14.1
 mypy-extensions==1.0.0
 nodeenv==1.9.1
 numpy==2.2.2
+openchart==0.1.2
 packaging==24.2
 pandas==2.2.3
 pillow==11.1.0
