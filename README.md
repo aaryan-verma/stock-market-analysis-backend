@@ -67,7 +67,7 @@ NEWS_API_KEY=your_newsapi_key_here
 uvicorn app.main:app --reload
 ```
 
-The API documentation will be available at http://localhost:8000/
+The API documentation will be available at http://localhost:8000/redoc
 
 ## API Endpoints
 
