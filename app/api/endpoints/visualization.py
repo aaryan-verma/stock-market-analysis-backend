@@ -9,12 +9,18 @@ import numpy as np
 from app.api.endpoints.stock_data import get_stock_data
 from app.utils.technical_analysis import data_resampling, calculate_levels
 from app.api.deps import create_token_auth_router, verify_token
+from app.api.logger import get_logger
+
+# Set up logger for this module
+logger = get_logger(__name__)
 
 router = create_token_auth_router()
 
 def get_closing_interpretation(last_close: float, levels: dict) -> str:
     """Get interpretation based on closing price"""
+    logger.debug(f"Interpreting closing price: {last_close}")
     if last_close < levels['S3'] and last_close > levels['S4']:
+        logger.debug("Identified as BULLISH SCENARIO 1")
         return """BULLISH SCENARIO 1:
 • Current Close is below S3 but above S4
 • Interpretation: BULLISH
@@ -22,6 +28,7 @@ def get_closing_interpretation(last_close: float, levels: dict) -> str:
 • Strategy: Look for buying opportunities"""
         
     elif last_close < levels['S4'] and last_close > levels['S6']:
+        logger.debug("Identified as BEARISH SCENARIO 1")
         return """BEARISH SCENARIO 1:
 • Current Close is below S4 (above S5/S6)
 • Interpretation: BEARISH
@@ -29,6 +36,7 @@ def get_closing_interpretation(last_close: float, levels: dict) -> str:
 • Strategy: Watch for selling opportunities"""
         
     elif last_close > levels['R3'] and last_close < levels['R4']:
+        logger.debug("Identified as BEARISH SCENARIO 2")
         return """BEARISH SCENARIO 2:
 • Current Close is above R3 but below R4
 • Interpretation: BEARISH
@@ -36,12 +44,14 @@ def get_closing_interpretation(last_close: float, levels: dict) -> str:
 • Strategy: Consider profit booking/shorts"""
         
     elif last_close > levels['R4'] and last_close < levels['R6']:
+        logger.debug("Identified as BULLISH SCENARIO 2")
         return """BULLISH SCENARIO 2:
 • Current Close is above R4 but below R5/R6
 • Interpretation: BULLISH
 • Target: Can rise to R6
 • Strategy: Hold longs with trailing stop-loss"""
     
+    logger.debug("Price is in transition zone")
     return "Price is in transition zone. Wait for clear signals."
 
 def create_plot(df: pd.DataFrame, period: str) -> str:
@@ -201,6 +211,7 @@ def create_plot(df: pd.DataFrame, period: str) -> str:
     image_base64 = base64.b64encode(buffer.getvalue()).decode()
     plt.close()
     
+    logger.debug("Visualization plot created successfully")
     return image_base64
 
 @router.get("/plot/{symbol}")
@@ -223,21 +234,81 @@ async def get_technical_analysis_plot(
     Returns:
         JSON with plot data as base64 string
     """
+    logger.info(f"Visualization request for symbol: {symbol}, period: {period}")
     try:
         # Get stock data
+        logger.debug(f"Fetching stock data for visualization of {symbol}")
         stock_data = await get_stock_data(symbol, start_date, end_date)
+        
+        if not stock_data["data"]:
+            logger.warning(f"No data found for visualization of symbol {symbol}")
+            raise HTTPException(
+                status_code=404,
+                detail=f"No data found for symbol {symbol} in the specified date range"
+            )
+        
         df = pd.DataFrame(stock_data['data'])
+        logger.debug(f"Retrieved {len(df)} data points for visualization")
+        
+        # Make sure we have dates in the proper format
+        try:
+            # If the Date column exists but contains null values, create a range of dates
+            if 'Date' in df.columns and df['Date'].isnull().any():
+                logger.debug("Date column contains null values, generating date range")
+                # Parse start and end dates
+                start = pd.to_datetime(start_date, format='%d-%m-%Y')
+                end = pd.to_datetime(end_date, format='%d-%m-%Y')
+                # Create date range that matches the number of rows
+                date_range = pd.date_range(start=start, end=end, periods=len(df))
+                df['Date'] = date_range
+            
+            # If Date column doesn't exist, create it
+            if 'Date' not in df.columns:
+                logger.debug("Date column doesn't exist, generating date range")
+                # Parse start and end dates
+                start = pd.to_datetime(start_date, format='%d-%m-%Y')
+                end = pd.to_datetime(end_date, format='%d-%m-%Y')
+                # Create date range that matches the number of rows
+                date_range = pd.date_range(start=start, end=end, periods=len(df))
+                df['Date'] = date_range
+            
+            # Ensure Date is datetime
+            df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+            
+            # Drop rows with invalid dates
+            invalid_date_count = df['Date'].isna().sum()
+            if invalid_date_count > 0:
+                logger.warning(f"Dropping {invalid_date_count} rows with invalid dates")
+                df = df.dropna(subset=['Date'])
+            
+            # Set Date as index
+            df = df.set_index('Date')
+            
+            # Debug column names and data types
+            logger.debug(f"DataFrame columns: {df.columns.tolist()}")
+            logger.debug(f"DataFrame dtypes: {df.dtypes}")
+            
+        except Exception as e:
+            logger.error(f"Error processing dates: {str(e)}", exc_info=True)
+            # Generate synthetic dates as a fallback
+            logger.debug("Using synthetic date range as fallback")
+            date_range = pd.date_range(start='today', periods=len(df))
+            df = df.set_index(date_range)
         
         # Validate period
         valid_periods = {'D': 'Daily', 'W': 'Weekly', 'M': 'Monthly', 'Q': 'Quarterly', 'Y': 'Yearly'}
         if period not in valid_periods:
+            logger.warning(f"Invalid period specified: {period}")
             raise HTTPException(
                 status_code=400,
                 detail=f"Invalid period. Must be one of: {', '.join(valid_periods.keys())}"
             )
         
         # Process data
+        logger.debug(f"Resampling data for visualization to {valid_periods[period]} period")
         resampled_data = data_resampling(df, period)
+        
+        logger.debug("Calculating support and resistance levels for visualization")
         analysis_result = calculate_levels(resampled_data)
         
         # Get last closing price and levels
@@ -256,7 +327,7 @@ async def get_technical_analysis_plot(
         }
         
         interpretation = get_closing_interpretation(last_close, levels)
-        plot_base64 = create_plot(analysis_result, valid_periods[period])
+        plot_base64 = create_plot(analysis_result, period)
         
         # Get last candle data
         last_candle = analysis_result.iloc[-1]
@@ -269,6 +340,7 @@ async def get_technical_analysis_plot(
             "change": float((last_candle['Close'] - last_candle['Open']) / last_candle['Open'] * 100)
         }
         
+        logger.info(f"Successfully created visualization for {symbol}")
         return JSONResponse({
             "symbol": symbol,
             "period": valid_periods[period],
@@ -280,6 +352,7 @@ async def get_technical_analysis_plot(
         })
         
     except Exception as e:
+        logger.error(f"Error generating visualization for {symbol}: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=503,
             detail=f"Plot generation failed: {str(e)}"

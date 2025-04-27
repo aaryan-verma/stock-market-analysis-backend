@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import api_messages, deps
+from app.api.logger import get_logger
 from app.core.config import get_settings
 from app.core.security.jwt import create_jwt_token
 from app.core.security.password import (
@@ -19,6 +20,9 @@ from app.core.security.password import (
 from app.models import RefreshToken, User
 from app.schemas.requests import RefreshTokenRequest, UserCreateRequest
 from app.schemas.responses import AccessTokenResponse, UserResponse
+
+# Set up logger for this module
+logger = get_logger(__name__)
 
 router = APIRouter()
 
@@ -70,10 +74,12 @@ async def login_access_token(
     session: AsyncSession = Depends(deps.get_session),
     form_data: OAuth2PasswordRequestForm = Depends(),
 ) -> AccessTokenResponse:
+    logger.info(f"Login attempt for user: {form_data.username}")
     user = await session.scalar(select(User).where(User.email == form_data.username))
 
     if user is None:
         # this is naive method to not return early
+        logger.warning(f"Login failed - user not found: {form_data.username}")
         verify_password(form_data.password, DUMMY_PASSWORD)
 
         raise HTTPException(
@@ -82,11 +88,13 @@ async def login_access_token(
         )
 
     if not verify_password(form_data.password, user.hashed_password):
+        logger.warning(f"Login failed - invalid password for user: {form_data.username}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=api_messages.PASSWORD_INVALID,
         )
 
+    logger.info(f"User authenticated successfully: {user.email}")
     jwt_token = create_jwt_token(user_id=user.user_id)
 
     refresh_token = RefreshToken(
@@ -96,6 +104,7 @@ async def login_access_token(
     )
     session.add(refresh_token)
     await session.commit()
+    logger.debug(f"Created refresh token for user: {user.user_id}")
 
     return AccessTokenResponse(
         access_token=jwt_token.access_token,
@@ -115,6 +124,7 @@ async def refresh_token(
     data: RefreshTokenRequest,
     session: AsyncSession = Depends(deps.get_session),
 ) -> AccessTokenResponse:
+    logger.info("Refresh token request received")
     token = await session.scalar(
         select(RefreshToken)
         .where(RefreshToken.refresh_token == data.refresh_token)
@@ -122,21 +132,25 @@ async def refresh_token(
     )
 
     if token is None:
+        logger.warning("Refresh token not found")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=api_messages.REFRESH_TOKEN_NOT_FOUND,
         )
     elif time.time() > token.exp:
+        logger.warning(f"Expired refresh token used for user: {token.user_id}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=api_messages.REFRESH_TOKEN_EXPIRED,
         )
     elif token.used:
+        logger.warning(f"Already used refresh token attempt for user: {token.user_id}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=api_messages.REFRESH_TOKEN_ALREADY_USED,
         )
 
+    logger.info(f"Valid refresh token for user: {token.user_id}")
     token.used = True
     session.add(token)
 
@@ -149,6 +163,7 @@ async def refresh_token(
     )
     session.add(refresh_token)
     await session.commit()
+    logger.debug(f"Created new refresh token for user: {token.user_id}")
 
     return AccessTokenResponse(
         access_token=jwt_token.access_token,
@@ -168,8 +183,10 @@ async def register_new_user(
     new_user: UserCreateRequest,
     session: AsyncSession = Depends(deps.get_session),
 ) -> User:
+    logger.info(f"Registration attempt for email: {new_user.email}")
     user = await session.scalar(select(User).where(User.email == new_user.email))
     if user is not None:
+        logger.warning(f"Registration failed - email already exists: {new_user.email}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=api_messages.EMAIL_ADDRESS_ALREADY_USED,
@@ -183,8 +200,10 @@ async def register_new_user(
 
     try:
         await session.commit()
+        logger.info(f"New user registered successfully: {user.email}")
     except IntegrityError:  # pragma: no cover
         await session.rollback()
+        logger.error(f"Database integrity error during user registration: {new_user.email}")
 
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

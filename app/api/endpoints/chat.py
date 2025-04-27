@@ -1,6 +1,10 @@
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from app.api.deps import create_token_auth_router, verify_token
+from app.api.logger import get_logger
+
+# Set up logger for this module
+logger = get_logger(__name__)
 
 router = create_token_auth_router()
 
@@ -85,6 +89,7 @@ CLOSING_CONDITIONS = {
 
 def get_closing_analysis(message: str) -> str:
     """Get closing price condition analysis"""
+    logger.debug("Returning closing price analysis information")
     return """📊 Closing Price Analysis:
 
 1️⃣ BULLISH SCENARIO 1:
@@ -113,15 +118,18 @@ def get_closing_analysis(message: str) -> str:
 
 def get_level_info(message: str) -> str:
     """Parse user message and return relevant level information"""
+    logger.debug(f"Processing chat message: '{message}'")
     message = message.upper()
     
     # Check for closing price analysis request
     if "CLOSING" in message or "CONDITION" in message or "ANALYSIS" in message:
+        logger.debug("User requested closing price analysis")
         return get_closing_analysis(message)
     
     # Check for specific level questions
     for level, info in STOCK_LEVELS.items():
         if level in message:
+            logger.debug(f"User requested information about level {level}")
             return f"""🎯 {level} - {info['name']}
             
 📊 Interpretation:
@@ -134,6 +142,7 @@ def get_level_info(message: str) -> str:
     
     # General questions about levels
     if "LEVELS" in message or "ALL" in message:
+        logger.debug("User requested information about all levels")
         response = """📈 Stock Level Interpretations:
 
 🟢 LONG Targets:
@@ -157,6 +166,7 @@ Type 'closing analysis' to understand how closing prices affect trend interpreta
     
     # Questions about trading direction
     if "LONG" in message or "BUY" in message:
+        logger.debug("User requested information about long trading setup")
         return """🟢 Long Trading Levels:
 
 1. Entry Zone: Look for entries near S3 (Buy reversal)
@@ -167,6 +177,7 @@ Type 'closing analysis' to understand how closing prices affect trend interpreta
 Type the level code (e.g., 'R5') for specific details."""
 
     if "SHORT" in message or "SELL" in message:
+        logger.debug("User requested information about short trading setup")
         return """🔴 Short Trading Levels:
 
 1. Entry Zone: Look for entries near R3 (Sell reversal)
@@ -177,6 +188,7 @@ Type the level code (e.g., 'R5') for specific details."""
 Type the level code (e.g., 'S5') for specific details."""
     
     # Default response
+    logger.debug("No specific request identified, returning welcome message")
     return """Welcome to Stock Level Analysis! 
 
 I can help you understand:
@@ -194,11 +206,15 @@ async def chat(
     message: ChatMessage,
     token: str = Depends(verify_token)
 ):
+    logger.info("Chat message received")
     try:
+        logger.debug(f"Processing chat message: {message.message}")
         response = get_level_info(message.message)
+        logger.debug("Chat response generated successfully")
         return {"response": response}
     except Exception as e:
+        logger.error(f"Error processing chat message: {str(e)}", exc_info=True)
         raise HTTPException(
-            status_code=503,
-            detail=f"Chat failed: {str(e)}"
+            status_code=500,
+            detail=f"An error occurred: {str(e)}"
         ) 

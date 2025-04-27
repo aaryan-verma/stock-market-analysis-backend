@@ -5,6 +5,10 @@ from datetime import datetime
 from app.api.endpoints.stock_data import get_stock_data
 from app.utils.technical_analysis import data_resampling, calculate_levels
 from app.api.deps import create_token_auth_router, verify_token
+from app.api.logger import get_logger
+
+# Set up logger for this module
+logger = get_logger(__name__)
 
 router = create_token_auth_router()
 
@@ -28,11 +32,14 @@ async def get_technical_analysis(
     Returns:
         JSON with technical analysis data including support and resistance levels
     """
+    logger.info(f"Technical analysis request for symbol: {symbol}, start_date: {start_date}, end_date: {end_date}, period: {period}")
     try:
         # First get the stock data
+        logger.debug(f"Fetching stock data for {symbol}")
         stock_data = await get_stock_data(symbol, start_date, end_date)
         
         if not stock_data["data"]:
+            logger.warning(f"No data found for symbol {symbol} in the specified date range")
             raise HTTPException(
                 status_code=404,
                 detail=f"No data found for symbol {symbol} in the specified date range"
@@ -40,19 +47,23 @@ async def get_technical_analysis(
         
         # Convert to DataFrame
         df = pd.DataFrame(stock_data['data'])
+        logger.debug(f"Retrieved {len(df)} data points for analysis")
         
         # Validate period
         valid_periods = {'D': 'Daily', 'W': 'Weekly', 'M': 'Monthly', 'Q': 'Quarterly', 'Y': 'Yearly'}
         if period not in valid_periods:
+            logger.warning(f"Invalid period specified: {period}")
             raise HTTPException(
                 status_code=400,
                 detail=f"Invalid period. Must be one of: {', '.join(valid_periods.keys())}"
             )
         
         # Resample data to specified period
+        logger.debug(f"Resampling data to {valid_periods[period]} period")
         resampled_data = data_resampling(df, period)
         
         # Calculate levels
+        logger.debug("Calculating support and resistance levels")
         analysis_result = calculate_levels(resampled_data)
         
         # Format the result
@@ -62,6 +73,7 @@ async def get_technical_analysis(
         # Convert DataFrame to dict, handling any remaining NaN values
         result_dict = analysis_result.where(pd.notnull(analysis_result), None).to_dict('records')
         
+        logger.info(f"Successfully completed technical analysis for {symbol} with {len(result_dict)} data points")
         return {
             "symbol": symbol,
             "period": valid_periods[period],
@@ -71,6 +83,7 @@ async def get_technical_analysis(
         }
         
     except Exception as e:
+        logger.error(f"Technical analysis failed for {symbol}: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=503,
             detail=f"Analysis failed: {str(e)}"
