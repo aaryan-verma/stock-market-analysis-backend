@@ -2,11 +2,16 @@ from fastapi import APIRouter, HTTPException
 from typing import List, Dict
 from datetime import datetime, timedelta
 import aiohttp
+from app.api.logger import get_logger
+
+# Set up logger for this module
+logger = get_logger(__name__)
 
 router = APIRouter()
 
 async def fetch_news(symbol: str, max_items: int = 10) -> List[Dict]:
     """Fetch stock-specific news using NewsAPI.org"""
+    logger.debug(f"Fetching news for symbol: {symbol}, max_items: {max_items}")
     # Free API key from NewsAPI.org
     API_KEY = "d6576629c1114f1ca23237a17ad35a2b"
     
@@ -33,6 +38,8 @@ async def fetch_news(symbol: str, max_items: int = 10) -> List[Dict]:
             search_query = company_names.get(clean_symbol, clean_symbol)
             search_query = f"{search_query} stock market OR finance OR trading"
             
+            logger.debug(f"Using search query: {search_query}")
+            
             # Build URL for NewsAPI
             url = (
                 "https://newsapi.org/v2/everything"
@@ -44,8 +51,10 @@ async def fetch_news(symbol: str, max_items: int = 10) -> List[Dict]:
                 f"&apiKey={API_KEY}"
             )
             
+            logger.debug(f"Making request to NewsAPI")
             async with session.get(url) as response:
                 if response.status != 200:
+                    logger.error(f"NewsAPI returned status code: {response.status}")
                     raise HTTPException(
                         status_code=response.status,
                         detail="Failed to fetch news from external API"
@@ -53,6 +62,7 @@ async def fetch_news(symbol: str, max_items: int = 10) -> List[Dict]:
                 
                 data = await response.json()
                 articles = data.get('articles', [])
+                logger.debug(f"Retrieved {len(articles)} articles from NewsAPI")
                 
                 # Process and sort news by relevance/impact
                 processed_news = []
@@ -117,9 +127,10 @@ async def fetch_news(symbol: str, max_items: int = 10) -> List[Dict]:
                                 "source": item.get('source', {}).get('name', ''),
                                 "image_url": item.get('urlToImage', '')
                             })
+                            logger.debug(f"Added news item with impact: {impact}, score: {impact_score}")
                         
                     except Exception as e:
-                        print(f"Error processing news item: {str(e)}")
+                        logger.error(f"Error processing news item: {str(e)}", exc_info=True)
                         continue
                 
                 # Sort by impact score and get top 5
@@ -129,10 +140,11 @@ async def fetch_news(symbol: str, max_items: int = 10) -> List[Dict]:
                     reverse=True
                 )[:5]
                 
+                logger.info(f"Successfully processed news for {symbol}, returning {len(sorted_news)} items")
                 return sorted_news
                 
     except Exception as e:
-        print(f"News API error: {str(e)}")
+        logger.error(f"News API error: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=503,
             detail=f"Failed to fetch news: {str(e)}"
@@ -141,9 +153,12 @@ async def fetch_news(symbol: str, max_items: int = 10) -> List[Dict]:
 @router.get("/{symbol}")
 async def get_stock_news(symbol: str):
     """Get top 5 most impactful news items for a stock"""
+    logger.info(f"News request for symbol: {symbol}")
     try:
         # Limit news items processed
         news_items = await fetch_news(symbol, max_items=10)  # Process fewer items
+        logger.debug(f"Returning {len(news_items)} news items for {symbol}")
         return {"news": news_items[:5]}  # Return only top 5
     except Exception as e:
+        logger.error(f"Error in get_stock_news: {str(e)}", exc_info=True)
         raise HTTPException(status_code=503, detail=str(e)) 
