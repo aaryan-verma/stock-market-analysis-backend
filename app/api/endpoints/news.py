@@ -162,10 +162,23 @@ async def fetch_news(symbol: str, max_items: int = 10) -> List[Dict]:
         )
 
 @router.get("/{symbol}")
-async def get_stock_news(symbol: str):
-    """Get top 5 most impactful news items for a stock"""
-    logger.info(f"News request for symbol: {symbol}")
+async def get_stock_news(symbol: str, isin: str = None, is_index: bool = False):
+    """Get top 5 most impactful news items for a stock
+    
+    Args:
+        symbol: Stock symbol
+        isin: Optional ISIN number for the stock
+        is_index: Optional - Whether the symbol is an index (Nifty 50, Bank Nifty, etc.)
+    """
+    logger.info(f"News request for symbol: {symbol}, is_index: {is_index}")
     try:
+        # Update search query for indices
+        if is_index:
+            if symbol == "NIFTY 50":
+                symbol = "Nifty 50 Index"
+            elif symbol == "NIFTY BANK":
+                symbol = "Nifty Bank Index"
+                
         # Limit news items processed
         news_items = await fetch_news(symbol, max_items=10)  # Process fewer items
         logger.debug(f"Returning {len(news_items)} news items for {symbol}")

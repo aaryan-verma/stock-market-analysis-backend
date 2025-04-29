@@ -110,3 +110,9 @@ docker build -t stock-market-analysis-backend .
 # Run the container
 docker run -p 8000:8000 --env-file .env stock-market-analysis-backend
 ```
+
+## Data Sources
+
+The backend fetches stock market data from the following sources:
+
+- **Upstox API** - For historical price data for stocks listed on NSE and other exchanges
